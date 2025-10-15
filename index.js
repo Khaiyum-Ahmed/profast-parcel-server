@@ -42,6 +42,24 @@ async function run() {
         res.send(parcels);
     })
 
+    // GET: All parcels OR parcels by user(created_by), sorted by latest
+
+    app.get('/parcels', async(req, res)=>{
+        try{
+            const userEmail = req.query.email;
+            const query = userEmail? {created_by: userEmail}: {};
+            const options = {
+                sort:{createdAt: -1}, //Newest first
+            };
+            const parcels = await parcelCollection.find(query, options).toArray();
+            res.send(parcels);
+        }
+        catch(error){
+            console.error('Error fetching parcels:', error);
+            res.status(500).send({message: 'Failed to get parcels'})
+        }
+    })
+
 
     // Post: create a new parcel
     app.post('/parcels', async(req, res)=>{
