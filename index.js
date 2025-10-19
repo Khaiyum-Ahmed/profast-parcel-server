@@ -38,6 +38,7 @@ async function run() {
         // DATABASE name and collection
         const parcelCollection = client.db('ParcelDB').collection('Parcels');
         const paymentsCollection = client.db('ParcelDB').collection('Payments');
+        const trackingCollection = client.db('ParcelDB').collection('Tracking');
 
         // get all parcels api
         app.get('/parcels', async (req, res) => {
@@ -105,6 +106,21 @@ async function run() {
                 console.error('Error deleting parcel:', error);
                 res.status(500).send({ message: "Failed to delete parcel" })
             }
+        });
+
+        // track you parcels
+        app.post("/tracking", async (req, res) => {
+            const { tracking_id, parcel_id, status, message, updated_by = '' } = req.body;
+            const log = {
+                tracking_id,
+                parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
+                status,
+                message,
+                time: new Date(),
+                updated_by,
+            };
+            const result = await trackingCollection.insertOne(log);
+            res.send({ success: true, insertedId: result.insertedId })
         });
 
         app.get('/payments', async (req, res) => {
