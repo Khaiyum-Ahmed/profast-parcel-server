@@ -19,7 +19,7 @@ app.use(express.json());
 const serviceAccount = require("./firebase-admin_key.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount)
 });
 
 
@@ -56,28 +56,28 @@ async function run() {
 
         // custom middlewares
 
-        const verifyFBToken = async(req, res, next)=>{
+        const verifyFBToken = async (req, res, next) => {
             const authHeader = req.headers.authorization;
-            if(!authHeader){
-                return res.status(401).send({message: 'UnAuthorized access'})
+            if (!authHeader) {
+                return res.status(401).send({ message: 'UnAuthorized access' })
             }
             const token = authHeader.split(' ')[1];
-            if(!token){
-                 return res.status(401).send({message: 'UnAuthorized access'})
+            if (!token) {
+                return res.status(401).send({ message: 'UnAuthorized access' })
             }
             // verify the token
-            try{
+            try {
                 const decoded = await admin.auth().verifyIdToken(token);
                 req.decoded = decoded;
-                 next();
+                next();
             }
-            catch(error){
-                 return res.status(403).send({message: 'Forbidden access'})
+            catch (error) {
+                return res.status(403).send({ message: 'Forbidden access' })
             }
 
 
             // console.log('header in middleware', authHeader)
-           
+
         }
 
         // user all data
@@ -136,7 +136,7 @@ async function run() {
 
         // GET: All parcels OR parcels by user(created_by), sorted by latest
 
-        app.get('/parcels',verifyFBToken, async (req, res) => {
+        app.get('/parcels', verifyFBToken, async (req, res) => {
             // console.log('headers in parcels', req.headers)
             try {
                 const userEmail = req.query.email;
@@ -199,21 +199,50 @@ async function run() {
 
 
         // Riders api 
-        app.post('/riders', async(req, res)=>{
+        app.post('/riders', async (req, res) => {
             const rider = req.body;
             const result = await ridersCollection.insertOne(rider);
             res.send(result);
         })
 
         // get all pending rider applications
-        app.get('/riders/pending', async(req, res)=>{
-            try{
-                const pendingRiders = await ridersCollection.find({status: "pending"}).toArray();
+        app.get('/riders/pending', async (req, res) => {
+            try {
+                const pendingRiders = await ridersCollection.find({ status: "pending" }).toArray();
                 res.send(pendingRiders);
             }
-            catch(error){
+            catch (error) {
                 console.log('Failed to load pending riders:', error);
-                res.status(500).send({message: "Failed to load pending riders"});
+                res.status(500).send({ message: "Failed to load pending riders" });
+            }
+        });
+
+        // riders status
+        app.get('/riders/active', async(req, res)=>{
+            const result = await ridersCollection.find({status: "active"}).toArray();
+            res.send(result);
+        })
+
+        app.patch('/riders/:id/status', async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+            const query = { _id: new ObjectId(id) };
+            const updateDoc = {
+                $set:
+                {
+                    status
+                }
+            }
+
+            try {
+                const result = await ridersCollection.updateOne(
+                    query,
+                    updateDoc
+                );
+                res.send(result);
+            }
+            catch (error) {
+                res.status(500).send({ message: "Failed to update rider status" });
             }
         });
 
@@ -232,7 +261,7 @@ async function run() {
             res.send({ success: true, insertedId: result.insertedId })
         });
 
-        app.get('/payments',verifyFBToken, async (req, res) => {
+        app.get('/payments', verifyFBToken, async (req, res) => {
             try {
                 const userEmail = req.query.email;
                 // console.log('decocded', req.decoded)
