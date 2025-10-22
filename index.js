@@ -49,6 +49,7 @@ async function run() {
 
         // DATABASE name and collection
         const usersCollection = client.db('ParcelDB').collection('Users');
+        const ridersCollection = client.db('ParcelDB').collection('Riders');
         const parcelCollection = client.db('ParcelDB').collection('Parcels');
         const paymentsCollection = client.db('ParcelDB').collection('Payments');
         const trackingCollection = client.db('ParcelDB').collection('Tracking');
@@ -65,10 +66,18 @@ async function run() {
                  return res.status(401).send({message: 'UnAuthorized access'})
             }
             // verify the token
+            try{
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                 next();
+            }
+            catch(error){
+                 return res.status(403).send({message: 'Forbidden access'})
+            }
 
 
             // console.log('header in middleware', authHeader)
-            next();
+           
         }
 
         // user all data
@@ -188,6 +197,26 @@ async function run() {
             }
         });
 
+
+        // Riders api 
+        app.post('/riders', async(req, res)=>{
+            const rider = req.body;
+            const result = await ridersCollection.insertOne(rider);
+            res.send(result);
+        })
+
+        // get all pending rider applications
+        app.get('/riders/pending', async(req, res)=>{
+            try{
+                const pendingRiders = await ridersCollection.find({status: "pending"}).toArray();
+                res.send(pendingRiders);
+            }
+            catch(error){
+                console.log('Failed to load pending riders:', error);
+                res.status(500).send({message: "Failed to load pending riders"});
+            }
+        });
+
         // track you parcels
         app.post("/tracking", async (req, res) => {
             const { tracking_id, parcel_id, status, message, updated_by = '' } = req.body;
@@ -203,13 +232,13 @@ async function run() {
             res.send({ success: true, insertedId: result.insertedId })
         });
 
-        app.get('/payments', async (req, res) => {
+        app.get('/payments',verifyFBToken, async (req, res) => {
             try {
                 const userEmail = req.query.email;
                 // console.log('decocded', req.decoded)
-                // if (req.decoded.email !== userEmail) {
-                //     return res.status(403).send({ message: 'forbidden access' })
-                // }
+                if (req.decoded.email !== userEmail) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
 
                 const query = userEmail ? { email: userEmail } : {};
                 const options = { sort: { paid_at: -1 } }; // Latest first
