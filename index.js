@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-
+const admin = require("firebase-admin");
 
 dotenv.config();
 const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY)
@@ -12,6 +12,18 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+
+
+
+const serviceAccount = require("./firebase-admin_key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+
+
 
 // Environment variables
 const PORT = process.env.PORT || 5000;
@@ -41,27 +53,82 @@ async function run() {
         const paymentsCollection = client.db('ParcelDB').collection('Payments');
         const trackingCollection = client.db('ParcelDB').collection('Tracking');
 
-        // user all data
-        app.post('/users', async(req, res)=>{
-            const email = req.body.email;
-            const userExists = await usersCollection.findOne({email});
-            if(userExists){
-                return res.send(200).send({message:'user already exists', inserted:false});
+        // custom middlewares
+
+        const verifyFBToken = async(req, res, next)=>{
+            const authHeader = req.headers.authorization;
+            if(!authHeader){
+                return res.status(401).send({message: 'UnAuthorized access'})
             }
-            const user = req.body;
-            const result = await usersCollection.insertOne(user);
-            res.send(result);
-        })
+            const token = authHeader.split(' ')[1];
+            if(!token){
+                 return res.status(401).send({message: 'UnAuthorized access'})
+            }
+            // verify the token
+
+
+            // console.log('header in middleware', authHeader)
+            next();
+        }
+
+        // user all data
+
+
+        // app.post('/users', async(req, res)=>{
+        //     const email = req.body.email;
+        //     const userExists = await usersCollection.findOne({email});
+        //     if(userExists){
+        //         return res.send(200).json({message:'user already exists', inserted:false});
+        //     }
+        //     const user = req.body;
+        //     const result = await usersCollection.insertOne(user);
+        //     res.send(result);
+        // })
+
+        app.post('/users', async (req, res) => {
+            try {
+                const { email } = req.body;
+
+                // Check if user already exists
+                const userExists = await usersCollection.findOne({ email });
+                if (userExists) {
+                    return res.status(200).json({
+                        message: 'User already exists',
+                        inserted: false,
+                    });
+                }
+
+                // Insert new user
+                const user = req.body;
+                const result = await usersCollection.insertOne(user);
+
+                return res.status(201).json({
+                    message: 'User created successfully',
+                    inserted: true,
+                    result,
+                });
+            } catch (error) {
+                console.error('User insert error:', error);
+
+                // Send only one error response
+                if (!res.headersSent) {
+                    return res.status(500).json({ message: 'Internal Server Error' });
+                }
+            }
+        });
+
 
         // get all parcels api
-        app.get('/parcels', async (req, res) => {
-            const parcels = await parcelCollection.find().toArray();
-            res.send(parcels);
-        })
+
+        // app.get('/parcels', async (req, res) => {
+        //     const parcels = await parcelCollection.find().toArray();
+        //     res.send(parcels);
+        // })
 
         // GET: All parcels OR parcels by user(created_by), sorted by latest
 
-        app.get('/parcels', async (req, res) => {
+        app.get('/parcels',verifyFBToken, async (req, res) => {
+            // console.log('headers in parcels', req.headers)
             try {
                 const userEmail = req.query.email;
                 const query = userEmail ? { created_by: userEmail } : {};
@@ -137,7 +204,6 @@ async function run() {
         });
 
         app.get('/payments', async (req, res) => {
-
             try {
                 const userEmail = req.query.email;
                 // console.log('decocded', req.decoded)
