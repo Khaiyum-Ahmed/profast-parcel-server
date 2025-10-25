@@ -94,6 +94,53 @@ async function run() {
         //     res.send(result);
         // })
 
+
+        // get user my search
+
+        app.get("/users/search", async (req, res) => {
+            const emailQuery = req.query.email;
+            if (!emailQuery) {
+                return res.status(400).send({ message: "Missing email query" });
+            }
+
+            const regex = new RegExp(emailQuery, "i"); // case-insensitive partial match
+
+            try {
+                const users = await usersCollection
+                    .find({ email: { $regex: regex } })
+                    // .project({ email: 1, createdAt: 1, role: 1 })
+                    .limit(10)
+                    .toArray();
+                res.send(users);
+            } catch (error) {
+                console.error("Error searching users", error);
+                res.status(500).send({ message: "Error searching users" });
+            }
+        });
+
+        // GET: Get user role by email
+        app.get('/users/:email/role', async (req, res) => {
+            try {
+                const email = req.params.email;
+
+                if (!email) {
+                    return res.status(400).send({ message: 'Email is required' });
+                }
+
+                const user = await usersCollection.findOne({ email });
+
+                if (!user) {
+                    return res.status(404).send({ message: 'User not found' });
+                }
+
+                res.send({ role: user.role || 'user' });
+            } catch (error) {
+                console.error('Error getting user role:', error);
+                res.status(500).send({ message: 'Failed to get role' });
+            }
+        });
+
+
         app.post('/users', async (req, res) => {
             try {
                 const { email } = req.body;
@@ -123,6 +170,28 @@ async function run() {
                 if (!res.headersSent) {
                     return res.status(500).json({ message: 'Internal Server Error' });
                 }
+            }
+        });
+
+        // user role modify by id
+
+        app.patch("/users/:id/role", verifyFBToken,  async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;
+
+            if (!["admin", "user"].includes(role)) {
+                return res.status(400).send({ message: "Invalid role" });
+            }
+
+            try {
+                const result = await usersCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { role } }
+                );
+                res.send({ message: `User role updated to ${role}`, result });
+            } catch (error) {
+                console.error("Error updating user role", error);
+                res.status(500).send({ message: "Failed to update user role" });
             }
         });
 
@@ -218,8 +287,8 @@ async function run() {
         });
 
         // riders status
-        app.get('/riders/active', async(req, res)=>{
-            const result = await ridersCollection.find({status: "active"}).toArray();
+        app.get('/riders/active', async (req, res) => {
+            const result = await ridersCollection.find({ status: "active" }).toArray();
             res.send(result);
         })
 
@@ -241,14 +310,14 @@ async function run() {
                 );
                 // update user role for accepting riders
 
-                if(status === "active"){
-                    const userQuery = {email};
+                if (status === "active") {
+                    const userQuery = { email };
                     const userUpdatedDoc = {
-                        $set:{
+                        $set: {
                             role: "rider"
                         }
                     };
-                    const roleResult =await usersCollection.updateOne(userQuery, userUpdatedDoc);
+                    const roleResult = await usersCollection.updateOne(userQuery, userUpdatedDoc);
                     console.log(roleResult.modifiedCount)
                 }
                 res.send(result);
