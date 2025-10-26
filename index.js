@@ -217,8 +217,17 @@ async function run() {
         app.get('/parcels', verifyFBToken, async (req, res) => {
             // console.log('headers in parcels', req.headers)
             try {
-                const userEmail = req.query.email;
-                const query = userEmail ? { created_by: userEmail } : {};
+                const {email, payment_status, delivery_status} = req.query;
+                let query = {}
+                if(email){
+                    query = { created_by: email }
+                }
+                if(payment_status){
+                    query.payment_status= payment_status;
+                }
+                if(delivery_status){
+                    query.delivery_status= delivery_status
+                }
                 const options = {
                     sort: { createdAt: -1 }, //Newest first
                 };
