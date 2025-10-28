@@ -52,7 +52,7 @@ async function run() {
         const ridersCollection = client.db('ParcelDB').collection('Riders');
         const parcelsCollection = client.db('ParcelDB').collection('Parcels');
         const paymentsCollection = client.db('ParcelDB').collection('Payments');
-        const trackingCollection = client.db('ParcelDB').collection('Tracking');
+        const trackingsCollection = client.db('ParcelDB').collection('Trackings');
 
         // custom middlewares
 
@@ -400,6 +400,21 @@ async function run() {
             }
         });
 
+        // rider cashout parcels 
+        app.patch('/parcels/:id/cashout', async (req, res) => {
+            const id = req.params.id;
+            const result = await parcelsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        cashout_status: 'cashed_out',
+                        cashed_out_at: new Date()
+                    }
+                }
+            );
+            res.send(result);
+        })
+
         // Delete: delete parcels 
         app.delete('/parcels/:id', async (req, res) => {
             try {
@@ -445,8 +460,8 @@ async function run() {
             try {
                 const riders = await ridersCollection.find({
                     warehouse,
-                    status: { $in: ["approved", "active"] },
-                    work_status: "available",
+                    // status: { $in: ["approved", "active"] },
+                    // work_status: "available",
                 })
                     .toArray();
                 // console.log(riders)
@@ -494,20 +509,45 @@ async function run() {
             }
         });
 
-        // track you parcels
-        app.post("/tracking", async (req, res) => {
-            const { tracking_id, parcel_id, status, message, updated_by = '' } = req.body;
-            const log = {
-                tracking_id,
-                parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
-                status,
-                message,
-                time: new Date(),
-                updated_by,
-            };
-            const result = await trackingCollection.insertOne(log);
-            res.send({ success: true, insertedId: result.insertedId })
+        // tracking your parcels
+
+        app.get("/trackings/:trackingId", async (req, res) => {
+            const trackingId = req.params.trackingId;
+
+            const updates = await trackingsCollection
+                .find({ tracking_id: trackingId })
+                .sort({ timestamp: 1 }) // sort by time ascending
+                .toArray();
+
+            res.json(updates);
         });
+
+        app.post("/trackings", async (req, res) => {
+            const update = req.body;
+
+            update.timestamp = new Date(); // ensure correct timestamp
+            if (!update.tracking_id || !update.status) {
+                return res.status(400).json({ message: "tracking_id and status are required." });
+            }
+
+            const result = await trackingsCollection.insertOne(update);
+            res.status(201).json(result);
+        });
+
+        // track you parcels
+        // app.post("/trackings", async (req, res) => {
+        //     const { tracking_id, parcel_id, status, message, updated_by = '' } = req.body;
+        //     const log = {
+        //         tracking_id,
+        //         parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
+        //         status,
+        //         message,
+        //         time: new Date(),
+        //         updated_by,
+        //     };
+        //     const result = await trackingsCollection.insertOne(log);
+        //     res.send({ success: true, insertedId: result.insertedId })
+        // });
 
         app.get('/payments', verifyFBToken, async (req, res) => {
             try {
