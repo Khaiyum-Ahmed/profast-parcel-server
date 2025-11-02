@@ -513,6 +513,7 @@ async function run() {
 
         app.get("/trackings/:trackingId", async (req, res) => {
             const trackingId = req.params.trackingId;
+            //  console.log("📦 Fetching tracking info for:", trackingId);
 
             const updates = await trackingsCollection
                 .find({ tracking_id: trackingId })
@@ -624,6 +625,180 @@ async function run() {
                 res.status(500).json({ error: error.message })
             }
         })
+
+
+        // admin dashboard APi
+
+        // ✅ Admin Dashboard Stats
+        app.get("/admin/dashboard-stats", async (req, res) => {
+            try {
+                const parcelsCount = await parcelsCollection.countDocuments();
+                const ridersCount = await ridersCollection.countDocuments({ status: "active" });
+                const usersCount = await usersCollection.countDocuments({ role: "user" });
+
+                const payments = await paymentsCollection.find().toArray();
+                const totalRevenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+                res.json({ parcelsCount, ridersCount, usersCount, totalRevenue });
+            } catch (error) {
+                console.error("Error fetching dashboard stats:", error);
+                res.status(500).json({ message: "Server error" });
+            }
+        });
+
+
+        // ✅ Recent Parcels
+        app.get("/admin/recent-parcels", async (req, res) => {
+            try {
+                const parcels = await parcelsCollection
+                    .find({})
+                    .sort({ creation_date: -1 })
+                    .limit(10)
+                    .toArray();
+                res.json(parcels);
+            } catch (error) {
+                res.status(500).json({ message: "Error loading parcels" });
+            }
+        });
+
+
+        // ✅ Revenue per Month (for Chart)
+        app.get("/admin/revenue-chart", async (req, res) => {
+            try {
+                const payments = await paymentsCollection.find().toArray();
+
+                const monthly = {};
+                payments.forEach(p => {
+                    const date = new Date(p.paid_at || p.paid_at_string);
+                    const month = date.toLocaleString("default", { month: "short", year: "numeric" });
+                    monthly[month] = (monthly[month] || 0) + (p.amount || 0);
+                });
+
+                const chartData = Object.entries(monthly).map(([month, total]) => ({ month, total }));
+                res.json(chartData);
+            } catch (error) {
+                res.status(500).json({ message: "Error generating chart data" });
+            }
+        });
+
+        // ✅ Get parcels assigned to a specific rider
+        app.get("/rider/parcels/:email", async (req, res) => {
+            try {
+                const { email } = req.params;
+                const parcels = await parcelsCollection
+                    .find({ assigned_rider_email: email })
+                    .sort({ creation_date: -1 })
+                    .toArray();
+
+                res.json(parcels);
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: "Failed to load rider parcels" });
+            }
+        });
+
+
+        // ✅ Update parcel status (picked up / delivered)
+        app.patch("/rider/update-status/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { status } = req.body;
+
+                let updateDoc = {};
+                if (status === "picked") {
+                    updateDoc = { delivery_status: "in_transit", picked_at: new Date() };
+                } else if (status === "delivered") {
+                    updateDoc = { delivery_status: "delivered", delivered_at: new Date() };
+                }
+
+                const result = await parcelsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateDoc }
+                );
+
+                // Also add a tracking log entry
+                const parcel = await parcelsCollection.findOne({ _id: new ObjectId(id) });
+                if (parcel) {
+                    await trackingsCollection.insertOne({
+                        tracking_id: parcel.tracking_id,
+                        status: updateDoc.delivery_status,
+                        details:
+                            status === "picked"
+                                ? `Picked up by ${parcel.assigned_rider_name}`
+                                : `Delivered by ${parcel.assigned_rider_name}`,
+                        location: parcel.sender_region,
+                        updated_by: parcel.assigned_rider_email,
+                        timestamp: new Date(),
+                    });
+                }
+
+                res.json({ success: true, result });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: "Failed to update parcel status" });
+            }
+        });
+
+
+        // ✅ Rider summary stats
+        app.get("/rider/summary/:email", async (req, res) => {
+            try {
+                const { email } = req.params;
+                const totalAssigned = await parcelsCollection.countDocuments({
+                    assigned_rider_email: email,
+                });
+                const totalDelivered = await parcelsCollection.countDocuments({
+                    assigned_rider_email: email,
+                    delivery_status: "delivered",
+                });
+
+                const deliveredParcels = await parcelsCollection
+                    .find({ assigned_rider_email: email, delivery_status: "delivered" })
+                    .toArray();
+
+                const totalEarnings = deliveredParcels.reduce(
+                    (sum, p) => sum + (p.cost || 0),
+                    0
+                );
+
+                res.json({ totalAssigned, totalDelivered, totalEarnings });
+            } catch (error) {
+                res.status(500).json({ message: "Error fetching rider summary" });
+            }
+        });
+
+        // ✅ Get all parcels created by a specific user
+        app.get("/user/parcels/:email", async (req, res) => {
+            try {
+                const { email } = req.params;
+                const parcels = await parcelsCollection
+                    .find({ created_by: email })
+                    .sort({ creation_date: -1 })
+                    .toArray();
+                res.json(parcels);
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: "Failed to fetch user parcels" });
+            }
+        });
+
+        // ✅ (Optional) Create a new parcel booking
+        app.post("/user/parcels", async (req, res) => {
+            try {
+                const newParcel = req.body;
+                newParcel.creation_date = new Date();
+                newParcel.delivery_status = "pending";
+                newParcel.payment_status = "unpaid";
+
+                const result = await parcelsCollection.insertOne(newParcel);
+                res.json({ success: true, insertedId: result.insertedId });
+            } catch (error) {
+                console.error(error);
+                res.status(500).json({ message: "Failed to create new parcel" });
+            }
+        });
+
+
 
 
         // Send a ping to confirm a successful connection
