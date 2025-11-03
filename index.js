@@ -14,9 +14,9 @@ app.use(cors());
 app.use(express.json());
 
 
+const decodedKey = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8');
 
-
-const serviceAccount = require("./firebase-admin_key.json");
+const serviceAccount = JSON.parse(decodedKey);
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -45,7 +45,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
         // DATABASE name and collection
         const usersCollection = client.db('ParcelDB').collection('Users');
@@ -53,6 +53,7 @@ async function run() {
         const parcelsCollection = client.db('ParcelDB').collection('Parcels');
         const paymentsCollection = client.db('ParcelDB').collection('Payments');
         const trackingsCollection = client.db('ParcelDB').collection('Trackings');
+        const servicesCollection = client.db('ParcelDB').collection('services');
 
         // custom middlewares
 
@@ -795,6 +796,19 @@ async function run() {
             } catch (error) {
                 console.error(error);
                 res.status(500).json({ message: "Failed to create new parcel" });
+            }
+        });
+
+
+        // 📦 Get all services
+        app.get("/services", async (req, res) => {
+            try {
+                const services = await servicesCollection.find().toArray();
+                res.json(services);
+                // console.log(services)
+            } catch (error) {
+                console.error("❌ Error fetching services:", error);
+                res.status(500).json({ message: "Failed to load services" });
             }
         });
 
