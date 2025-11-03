@@ -54,6 +54,7 @@ async function run() {
         const paymentsCollection = client.db('ParcelDB').collection('Payments');
         const trackingsCollection = client.db('ParcelDB').collection('Trackings');
         const servicesCollection = client.db('ParcelDB').collection('services');
+        const pricingCollection = client.db('ParcelDB').collection('pricing');
 
         // custom middlewares
 
@@ -810,6 +811,49 @@ async function run() {
                 console.error("❌ Error fetching services:", error);
                 res.status(500).json({ message: "Failed to load services" });
             }
+        });
+
+        app.get("/pricing", async (req, res) => {
+            try {
+                const pricingPlans = await pricingCollection.find().toArray();
+                res.json(pricingPlans);
+            } catch (error) {
+                console.error("❌ Error loading pricing:", error);
+                res.status(500).json({ message: "Failed to fetch pricing data" });
+            }
+        });
+
+
+        // ✅ Get user profile by email
+        app.get("/users/:email", async (req, res) => {
+            const email = req.params.email;
+            const user = await usersCollection.findOne({ email });
+            if (!user) return res.status(404).json({ message: "User not found" });
+            res.json(user);
+        });
+
+        // ✅ Update profile info
+        app.put("/users/:email", async (req, res) => {
+            const email = req.params.email;
+            const updateData = req.body;
+
+            const result = await usersCollection.updateOne(
+                { email },
+                {
+                    $set: {
+                        name: updateData.name,
+                        contact: updateData.contact,
+                        address: updateData.address,
+                        region: updateData.region,
+                        warehouse: updateData.warehouse,
+                        profile_image: updateData.profile_image,
+                        updated_at: new Date(),
+                    },
+                },
+                { upsert: true }
+            );
+
+            res.json(result);
         });
 
 
